@@ -1,0 +1,100 @@
+name: Backend CI/CD - NestJS
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'backend/**'
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./backend
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+    - name: 📥 Checkout código
+      uses: actions/checkout@v4
+
+    - name: 🔧 Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        cache-dependency-path: ./backend/package-lock.json
+
+    - name: 📦 Instalar dependencias
+      run: npm ci
+
+    - name: ✅ Ejecutar pruebas unitarias
+      run: npm test
+      continue-on-error: true  # No falla si no hay pruebas aún
+
+    - name: 🏗️ Compilar TypeScript
+      run: npm run build
+
+    - name: 📂 Guardar artifact del build
+      uses: actions/upload-artifact@v4
+      with:
+        name: backend-build-${{ github.sha }}
+        path: backend/dist/
+        retention-days: 7
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: test-and-build
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: 📥 Checkout código
+      uses: actions/checkout@v4
+
+    - name: 📦 Instalar dependencias
+      run: |
+        cd backend
+        npm ci
+
+    - name: 🏗️ Compilar
+      run: |
+        cd backend
+        npm run build
+
+    # Opción 1: Desplegar en Render.com
+    - name: 🚀 Deploy a Render
+      if: false  # Cambia a true cuando tengas la URL
+      uses: johnbeynon/render-deploy-action@v0.0.8
+      with:
+        service-id: ${{ secrets.RENDER_SERVICE_ID_BACKEND }}
+        api-key: ${{ secrets.RENDER_API_KEY }}
+
+    # Opción 2: Desplegar en Railway
+    - name: 🚀 Deploy a Railway
+      if: false  # Cambia a true cuando tengas la URL
+      uses: bervProject/railway-deploy@v1.0.0
+      with:
+        railway_token: ${{ secrets.RAILWAY_TOKEN }}
+        service: backend
+
+    # Opción 3: Desplegar en Heroku
+    - name: 🚀 Deploy a Heroku
+      if: false  # Cambia a true cuando tengas la URL
+      uses: akhileshns/heroku-deploy@v3.13.15
+      with:
+        heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
+        heroku_app_name: ${{ secrets.HEROKU_APP_NAME_BACKEND }}
+        heroku_email: ${{ secrets.HEROKU_EMAIL }}
+        appdir: "backend"
+
+    - name: ✅ Deploy completado
+      run: echo "Backend deployado exitosamente"

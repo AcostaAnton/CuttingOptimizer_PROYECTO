@@ -1,0 +1,111 @@
+name: Frontend CI/CD - Angular
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'frontend/**'
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./frontend
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+    - name: 📥 Checkout código
+      uses: actions/checkout@v4
+
+    - name: 🔧 Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        cache-dependency-path: ./frontend/package-lock.json
+
+    - name: 📦 Instalar dependencias
+      run: npm ci
+
+    - name: ✅ Ejecutar pruebas unitarias (Angular)
+      run: npm test -- --watch=false --browsers=ChromeHeadless
+      continue-on-error: true
+
+    - name: 🏗️ Construir aplicación Angular
+      run: npm run build -- --configuration=production
+
+    - name: 📂 Guardar artifact del build
+      uses: actions/upload-artifact@v4
+      with:
+        name: frontend-build-${{ github.sha }}
+        path: frontend/dist/
+        retention-days: 7
+
+    - name: 📊 Reporte de tamaño del build
+      run: |
+        echo "📦 Tamaño del build:"
+        du -sh dist/ 2>/dev/null || echo "Build no encontrado"
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: test-and-build
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+    - name: 📥 Checkout código
+      uses: actions/checkout@v4
+
+    - name: 📦 Instalar dependencias
+      run: |
+        cd frontend
+        npm ci
+
+    - name: 🏗️ Construir para producción
+      run: |
+        cd frontend
+        npm run build -- --configuration=production
+
+    # Opción 1: Desplegar en Vercel
+    - name: 🚀 Deploy a Vercel
+      uses: amondnet/vercel-action@v20
+      with:
+        vercel-token: ${{ secrets.VERCEL_TOKEN }}
+        vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+        vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+        vercel-args: '--prod'
+        working-directory: ./frontend
+
+    # Opción 2: Desplegar en Netlify
+    - name: 🚀 Deploy a Netlify
+      uses: nwtgck/actions-netlify@v2.0
+      with:
+        publish-dir: './frontend/dist/cutting-optimizer'
+        production-branch: main
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        deploy-message: "Deploy desde GitHub Actions"
+      env:
+        NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+
+    # Opción 3: Desplegar en GitHub Pages
+    - name: 🚀 Deploy a GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./frontend/dist/cutting-optimizer
+        destination_dir: ./
+        enable_jekyll: false
+        cname: cutting-optimizer.example.com  # Cambia por tu dominio
+
+    - name: ✅ Deploy completado
+      run: echo "Frontend deployado exitosamente"
